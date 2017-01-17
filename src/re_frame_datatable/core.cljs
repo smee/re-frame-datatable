@@ -96,6 +96,19 @@
 
 
 (re-frame/reg-event-db
+ ::remount
+ [trim-v]
+ (fn [db [db-id columns-def options]]
+   (-> db
+       (assoc-in (columns-def-db-path db-id)
+                  columns-def)
+        (assoc-in (options-db-path db-id)
+                  options)
+        (update-in (into (state-db-path db-id) [::pagination]) merge (select-keys (::pagination options) [::per-page ::enabled?]))
+        (update-in (into (state-db-path db-id) [::filter]) merge (select-keys (create-filter-state columns-def) [::type ::keys])))))
+
+
+(re-frame/reg-event-db
   ::unmount
   [trim-v]
   (fn [db [db-id]]
@@ -293,7 +306,8 @@
              (js/console.error (s/explain-str ::options options)))]}
 
 
-  (let [view-data (re-frame/subscribe [::data db-id data-sub])]
+  (let [view-data (re-frame/subscribe [::data db-id data-sub])
+        old-definitions (re-frame/subscribe [::definition db-id])]
     (reagent/create-class
       {:component-will-mount
        #(re-frame/dispatch [::mount db-id columns-def options])
@@ -308,7 +322,9 @@
          (let [{:keys [::items ::state ::indexes]} @view-data
                {:keys [::selection]} state
                {:keys [::table-classes ::tr-class-fn ::extra-header-row-component ::footer-component ::empty-tbody-component]} options]
-
+           ;; FIXME ugly, but we need to update internal state if column definitions or options have changed
+           (when (not= @old-definitions {::columns-def columns-def ::options options})
+             (re-frame/dispatch [::remount db-id columns-def options]))
            [:table.re-frame-datatable
             (when table-classes
               (css-class-str table-classes))
